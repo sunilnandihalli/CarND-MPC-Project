@@ -6,9 +6,9 @@
 using CppAD::AD;
 
 size_t N = 30;
-double dt = 0.05;
+static double dt = 0.05;
 const double Lf = 2.67;
-double ref_v = 40;
+double ref_v = 10;
 size_t x_start = 0;
 size_t y_start = x_start + N;
 size_t psi_start = y_start + N;
@@ -37,7 +37,7 @@ class FG_eval {
       fg[0] += CppAD::pow(vars[a_start + t], 2);
     }
     for (int t = 0; t < N - 2; t++) {  // reduce change in actuation neighbouring timesteps
-      fg[0] += CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
+      fg[0] += CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2)*0.1;
       fg[0] += CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
     }
 
@@ -107,7 +107,8 @@ MPC::MPC() {}
 MPC::~MPC() {}
 
 tuple<vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,bool>
-  MPC::Solve(Eigen::VectorXd x0, Eigen::VectorXd coeffs) {
+MPC::Solve(Eigen::VectorXd x0, double deltaT,Eigen::VectorXd coeffs) {
+  dt = deltaT;
   bool ok = true;
   size_t i;
   typedef CPPAD_TESTVECTOR(double) Dvector;

@@ -18,7 +18,7 @@ class MPC {
   // Return the first actuatotions.
   //vector<double>
   tuple<vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,bool>
-    Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs);
+    Solve(Eigen::VectorXd state, double dt, Eigen::VectorXd coeffs);
 };
 
 #endif /* MPC_H */

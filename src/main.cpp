@@ -75,9 +75,14 @@ double polyDerivativeEval(Eigen::VectorXd coeffs, double x) {
   return result;
 }
 
-Eigen::VectorXd polyfit(vector<double> xvals,vector<double>& yvals, int order) {
+Eigen::VectorXd polyfit(vector<double> xvals,vector<double> yvals, int order) {
   assert(xvals.size() == yvals.size());
   assert(order >= 1 && order <= xvals.size() - 1);
+  cout<<"polyfit : ";
+  for(int i=0;i<xvals.size();i++) {
+    cout<<"("<<xvals[i]<<","<<yvals[i]<<") ";
+  }
+  cout<<endl;
   Eigen::MatrixXd A(xvals.size(), order + 1);
   Eigen::VectorXd Y(xvals.size());
   for (int i = 0; i < xvals.size(); i++) {
@@ -111,6 +116,7 @@ void globalKinematic(double x0,double y0,double psi0,double v0,double delta0,dou
 }
 
 tuple<vector<double>,vector<double>> toCarCoords(double px,double py,double psi,vector<double> xs,vector<double> ys) {
+  cout<<" toCarCoords inp-sizes : "<<xs.size()<<" "<<ys.size()<<endl;
   double ct = cos(psi);
   double st = sin(psi);
   auto f = [&px,&py,&ct,&st](double x,double y)->tuple<double,double> {
@@ -170,7 +176,7 @@ void printSolution(solret& sol,Eigen::VectorXd& C,double px,double py,double psi
   int N = xs.size();
   {
     std::stringstream ss;
-    ss<<"solution_"<<setw(2)<<setfill('0')<<id;
+    ss<<"solution_"<<setw(5)<<setfill('0')<<id;
     std::ofstream fout(ss.str());
     vector<double> actes(N),aepsis(N);
     for(int i=0;i<N;i++) {
@@ -197,7 +203,7 @@ void printSolution(solret& sol,Eigen::VectorXd& C,double px,double py,double psi
   }
   {
     std::stringstream ss;
-    ss<<"way_"<<setw(2)<<setfill('0')<<id;
+    ss<<"way_"<<setw(5)<<setfill('0')<<id;
     std::ofstream fout(ss.str());
     vector<double> cptsx,cptsy;
     std::tie(cptsx,cptsy) = toCarCoords(px,py,psi,ptsx,ptsy);
@@ -231,29 +237,31 @@ struct simulator {
       ptsy.push_back(y);
     }
   }
-  void start(double& x,double& y,double& psi,double& v,double& delta,double& a,vector<double>& xs,vector<double>& ys) {
+  void start(double& x,double& y,double& psi,double& v,vector<double>& xs,vector<double>& ys) {
+    vector<double> ptsx0,ptsy0;
     ws = 0;
     for(int i=0;i<nws;i++) {
-      int l = (ws+i)%ptsx.size();
-      xs.push_back(ptsx[l]);
-      ys.push_back(ptsy[l]);
+      int l = ws+i;
+      ptsx0.push_back(ptsx[l]);
+      ptsy0.push_back(ptsy[l]);
     }
-    x = xs[0];
-    y = ys[0];
-    double dx(xs[1]-x),dy(ys[1]-y);
+    x = ptsx[0];
+    y = ptsy[0];
+    double dx(ptsx[1]-x),dy(ptsy[1]-y);
     psi = atan2(dy,dx);
     v = 0.0;
     x0=x;
     y0=y;
     psi0=psi;
     v0=v;
-    delta0=delta;
-    a0=a;
+    delta0=0;
+    a0=0;
+    std::tie(xs,ys) = toCarCoords(x0,y0,psi0,ptsx0,ptsy0);
   }
-  void nextstate(double dt/* time from last control input */,
+  bool nextstate(double dt/* time from last control input */,
 		 double delta1,double a1, /* new control inputs */
 		 double& x1,double& y1,double& psi1,double& v1, /* position of the vehicle control inputs were recieved */
-		 vector<double>& ptsx1,vector<double>& ptsy1) {
+		 vector<double>& cptsx1,vector<double>& cptsy1) {
     v1 = v0 + a0*dt;
     double dist = v0*dt+0.5*a0*dt*dt;
     psi1 = psi0 + (delta0/Lf)*dist;
@@ -269,7 +277,9 @@ struct simulator {
     {
       double ct(cos(psi1)),st(sin(psi1));
       for(int i = 0;i<nws;i++) {
-	int l = (i+ws)%ptsx.size();
+	int l = i+ws;
+	if(l==ptsx.size())
+	  break;
 	double dx(ptsx[l]-x1),dy(ptsy[l]-y1);
 	if(dx*ct+dy*st > 0) {
 	  ws = l;
@@ -277,13 +287,21 @@ struct simulator {
 	  break;
 	}
       }
+      vector<double> ptsx1,ptsy1;
       ptsx1.clear();
       ptsy1.clear();
       for(int i=0;i<nws;i++) {
-	int l = (i+ws)%ptsx.size();
+	int l = i+ws;
+	if(l==ptsx.size())
+	  break;
 	ptsx1.push_back(ptsx[l]);
 	ptsy1.push_back(ptsy[l]);
       }
+      if(ptsx1.size()<4)
+	return false;
+      cptsx1.clear();
+      cptsy1.clear();
+      std::tie(cptsx1,cptsy1) = toCarCoords(x1,y1,psi1,ptsx1,ptsy1);
     }
     {
       x0=x1;
@@ -294,6 +312,7 @@ struct simulator {
       a0=a1;
       t+=dt;
     }
+    return true;
   }
 };
 
@@ -304,17 +323,19 @@ double samedir(double x0,double y0,double x1,double y1,double psi) {
 }
 
 void calculateActivation(double x0,double y0,double psi0,double v0,
-			 double delta0,double a0,vector<double> ptsx0,vector<double> ptsy0,
-			 double& delta1,double& a1,vector<double>& xs_pred,vector<double>& ys_pred) {
+			 double delta0,double a0,vector<double> cptsx0,vector<double> cptsy0,
+			 double& delta1,double& a1,vector<double>& xs_pred,vector<double>& ys_pred,double deltaT) {
   static MPC mpc;
-  Eigen::VectorXd coeffs(polyfit(ptsx0,ptsy0,3)),state(6);
+  
+  Eigen::VectorXd coeffs(polyfit(cptsx0,cptsy0,3)),state(6);
   cout<<" coeffs : "<<coeffs.transpose()<<endl;
   double cte0,epsi0;
-  assert(samedir(ptsx0[0],ptsy0[0],ptsx0[1],ptsy0[1],psi0)>0);
-  std::tie(cte0,epsi0) = cte_and_epsi(x0,y0,psi0,coeffs);
-  state<<x0,y0,psi0,v0,cte0,epsi0;
-  auto controls = mpc.Solve(state,coeffs);
-  printSolution(controls,coeffs,x0,y0,psi0,ptsx0,ptsy0);
+  cout<<"state : "<<x0<<" "<<y0<<" "<<psi0<<" "<<v0<<" "<<delta0<<" "<<a0<<endl;
+  //assert(samedir(cptsx0[0],cptsy0[0],cptsx0[1],cptsy0[1],0)>0);
+  std::tie(cte0,epsi0) = cte_and_epsi(0,0,0,coeffs);
+  state<<0,0,0,v0,cte0,epsi0;
+  auto controls = mpc.Solve(state,deltaT,coeffs);
+  printSolution(controls,coeffs,0,0,0,cptsx0,cptsy0);
   delta1 = std::get<6>(controls)[0];
   a1 = std::get<7>(controls)[0];
   xs_pred = std::get<0>(controls);
@@ -336,21 +357,23 @@ void testrun(string p,double dx=0,double dy=0,double dpsi=0) {
   ofstream fout(cat({"/home/sunil/carnd/CarND-MPC-Project/debug/",p,"_debug"}));
   simulator s(path(p));
   double x,y,psi,v,delta,a,dt = 0.05;
-  vector<double> ptsx,ptsy,xs_pred,ys_pred;
-  s.start(x,y,psi,v,delta,a,ptsx,ptsy);
-  assert(ptsx.size()==6);
+  vector<double> cptsx,cptsy,xs_pred,ys_pred;
+  s.start(x,y,psi,v,cptsx,cptsy);
+  assert(cptsx.size()==6);
   fout<<"x,y,psi,v,delta,a,x1,x2,x3,x4,x5,x6,y1,y2,y3,y4,y5,y6"<<endl;
   x+=dx;
   y+=dy;
   psi+=dpsi;
   while(true) {
     fout<<x<<","<<y<<","<<psi<<","<<v<<","<<delta<<","<<a;
-    for(auto ptx:ptsx) fout<<","<<ptx; for(auto pty:ptsy) fout<<","<<pty; fout<<endl;
+    for(auto cptx:cptsx) fout<<","<<cptx; for(auto cpty:cptsy) fout<<","<<cpty; fout<<endl;
     fout.flush();
-    calculateActivation(x,y,psi,v,delta,a,ptsx,ptsy,//input
-			delta,a,xs_pred,ys_pred);// output
-    s.nextstate(dt,delta,a, // input
-		x,y,psi,v,ptsx,ptsy); // output
+    calculateActivation(x,y,psi,v,delta,a,cptsx,cptsy,//input
+			delta,a,xs_pred,ys_pred,dt);// output
+    if(!s.nextstate(dt,delta,a, // input
+		    x,y,psi,v,cptsx,cptsy)) { // output 
+      break;
+    }
   }
 }
 
@@ -395,15 +418,15 @@ void test(string sol,string way) {
   for(double dx:dxs)
     for(double dy:dys)
       calculateActivation(v["xs"][0]+dx,v["ys"][0]+dy,v["psis"][0],v["vs"][0],v["deltas"][0],v["as"][0],ptsx,ptsy,
-			  delta,a,xs_pred,ys_pred);
+			  delta,a,xs_pred,ys_pred,0.1);
 }
 
 
 int main() {
   //testrun("lake_track_waypoints.txt");
   //testrun("test3.txt",0,10,1.0);
-  test("../testcases/solution_382","../testcases/way_382"); 
-  return 0;
+  //test("../testcases/solution_382","../testcases/way_382"); 
+  //return 0;
   uWS::Hub h;
   static int id = 0;
   h.onMessage([](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
@@ -424,21 +447,18 @@ int main() {
           static double throttle_value = 0.0;
 	  id++;
 	  cout<<"-------------------------------------------------start "<<id<<" ----------------------------------------------"<<endl;
-	  cout<<"delay_estimate : "<<delay_estimate<<endl<<"pre  px : "<<px<<" py : "<<py<<" psi : "<<psi<<" v : "<<v<<endl;
 	  auto start = std::chrono::system_clock::now();
 	  globalKinematic(px,py,psi,v,steer_value,throttle_value,delay_estimate,px,py,psi,v);
 	  vector<double> mpc_x_vals,mpc_y_vals,next_x_vals,next_y_vals;
-	  calculateActivation(px,py,psi,v,steer_value,throttle_value,ptsx,ptsy,
-			      steer_value,throttle_value,mpc_x_vals,mpc_y_vals);
-	  std::tie(mpc_x_vals,mpc_y_vals) = toCarCoords(px,py,psi,mpc_x_vals,mpc_y_vals);
-	  std::tie(next_x_vals,next_y_vals) = toCarCoords(px,py,psi,ptsx,ptsy);
+	  std::tie(next_x_vals,next_y_vals) = toCarCoords(px,py,-psi,ptsx,ptsy);
+	  calculateActivation(px,py,psi,v,steer_value,throttle_value,next_x_vals,next_y_vals,
+			      steer_value,throttle_value,mpc_x_vals,mpc_y_vals,delay_estimate);
+	  
 	  this_thread::sleep_for(chrono::milliseconds(100)); // simulate latency
 	  auto end = std::chrono::system_clock::now();
 	  std::chrono::duration<double> elapsed_seconds = end-start;
 	  delay_estimate = elapsed_seconds.count();
-	  cout<<"actual_estimate : "<<delay_estimate<<endl<<"post px : "<<px<<" py : "<<py<<" psi : "<<psi<<" v : "<<v<<endl;
 	  cout<<"#################################################end "<<id<<"###############################################"<<endl;
-
 	  json msgJson;
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
