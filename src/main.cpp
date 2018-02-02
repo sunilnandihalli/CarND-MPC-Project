@@ -103,7 +103,7 @@ void globalKinematic(double x0,double y0,double psi0,double v0,double delta0,dou
 		     double& x1,double& y1,double& psi1,double& v1) {
   v1 = v0 + a0*dt;
   double dist = v0*dt+0.5*a0*dt*dt;
-  psi1 = psi0 + (delta0/Lf)*dist;
+  psi1 = psi0 - (delta0/Lf)*dist;
   if(fabs(delta0)>tol) {
     double r  =  Lf/delta0;
     x1 = x0 + r*(sin(psi1)-sin(psi0));
@@ -135,6 +135,7 @@ tuple<vector<double>,vector<double>> toCarCoords(double px,double py,double psi,
 
 template<class T>
 void printRow(vector<T> vs) {
+  return;
   for(auto& v:vs) 
     cout<<setw(15)<<v;
   cout<<endl;
@@ -264,11 +265,11 @@ struct simulator {
 		 vector<double>& cptsx1,vector<double>& cptsy1) {
     v1 = v0 + a0*dt;
     double dist = v0*dt+0.5*a0*dt*dt;
-    psi1 = psi0 + (delta0/Lf)*dist;
+    psi1 = psi0 - (delta0/Lf)*dist;
     if(fabs(delta0)>tol) {
       double r  =  Lf/delta0;
-      x1 = x0 + r*(sin(psi1)-sin(psi0));
-      y1 = y0 + r*(cos(psi0)-cos(psi1));
+      x1 = x0 - r*(sin(psi1)-sin(psi0));
+      y1 = y0 - r*(cos(psi0)-cos(psi1));
     } else {
       double psi_avg = 0.5*(psi0+psi1);
       x1 = x0 + dist*cos(psi_avg);
@@ -438,19 +439,23 @@ int main() {
         auto j = json::parse(s);
         string event = j[0].get<string>();
         if (event == "telemetry") {
+	  auto start = std::chrono::system_clock::now();
           vector<double> ptsx=j[1]["ptsx"],ptsy=j[1]["ptsy"];
-          double px(j[1]["x"]),py(j[1]["y"]),psi = j[1]["psi"],v(j[1]["speed"]),psi_unity(j[1]["psi_unity"]);
-	  ofstream ofs;
-	  ofs.open("way.txt",ofstream::out|ofstream::app);
+	  double px(j[1]["x"]),py(j[1]["y"]),psi(j[1]["psi"]),
+	    v(j[1]["speed"]),psi_unity(j[1]["psi_unity"]),
+	    delta(j[1]["steering_angle"]),throttle(j[1]["throttle"]);
+
 	  static double delay_estimate = 0.1; // delay of 100 MilliSeconds
           static double steer_value = 0.0;
           static double throttle_value = 0.0;
 	  id++;
 	  cout<<"-------------------------------------------------start "<<id<<" ----------------------------------------------"<<endl;
-	  auto start = std::chrono::system_clock::now();
-	  globalKinematic(px,py,psi,v,steer_value,throttle_value,delay_estimate,px,py,psi,v);
+	  cout<<"throttle sent : "<<throttle_value<<" recieved : "<<throttle<<" steer sent : "<<steer_value<<" recieved : "<<delta<<endl;
+	  cout<<"delay : "<<delay_estimate<<" before px : "<<px<<" py : "<<py<<" psi : "<<psi<<" v : "<<v<<endl;
+	  globalKinematic(px,py,psi,v,steer_value,throttle,delay_estimate,px,py,psi,v);
+	  cout<<" after px : "<<px<<" py : "<<py<<" psi : "<<psi<<" v : "<<v<<endl;
 	  vector<double> mpc_x_vals,mpc_y_vals,next_x_vals,next_y_vals;
-	  std::tie(next_x_vals,next_y_vals) = toCarCoords(px,py,-psi,ptsx,ptsy);
+	  std::tie(next_x_vals,next_y_vals) = toCarCoords(px,py,psi,ptsx,ptsy);
 	  calculateActivation(px,py,psi,v,steer_value,throttle_value,next_x_vals,next_y_vals,
 			      steer_value,throttle_value,mpc_x_vals,mpc_y_vals,delay_estimate);
 	  
@@ -460,8 +465,9 @@ int main() {
 	  delay_estimate = elapsed_seconds.count();
 	  cout<<"#################################################end "<<id<<"###############################################"<<endl;
 	  json msgJson;
-          msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = throttle_value;
+	  // rescale steer_value which is in radians to -1 to 1
+          msgJson["steering_angle"] = steer_value/0.436332;
+	  msgJson["throttle"] = throttle_value;
 	  msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
 	  msgJson["next_x"] = next_x_vals;

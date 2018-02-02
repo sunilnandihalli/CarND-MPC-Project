@@ -83,13 +83,13 @@ class FG_eval {
       AD<double> dist = v0*dt + 0.5*a0*dt*dt;
       if(CppAD::abs_geq(delta0,tol)) {
 	AD<double> r = Lf/delta0;
-	x1p = x0 + r*(CppAD::sin(psi1)-CppAD::sin(psi0));
-	y1p = y0 + r*(CppAD::cos(psi0)-CppAD::cos(psi1));
+	x1p = x0 - r*(CppAD::sin(psi1)-CppAD::sin(psi0));
+	y1p = y0 - r*(CppAD::cos(psi0)-CppAD::cos(psi1));
       } else {
 	x1p = x0 + dist*CppAD::cos(psi0);
 	y1p = y0 + dist*CppAD::sin(psi0);
       }
-      AD<double> psi1p = psi0 + dist*(delta0 / Lf );
+      AD<double> psi1p = psi0 - dist*(delta0 / Lf );
       AD<double> v1p = v0 + a0 * dt;
       AD<double> cte1p = (f1-y1)/norm;
       AD<double> epsi1p = (fdash1*CppAD::cos(psi1)-CppAD::sin(psi1))/norm;
