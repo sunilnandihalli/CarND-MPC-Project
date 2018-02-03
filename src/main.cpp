@@ -50,22 +50,6 @@ vector<double> polyeval(Eigen::VectorXd& coeffs,vector<double> xs) {
   return ys;
 }
 
-tuple<vector<double>,vector<double>> interpolate(Eigen::VectorXd& coeffs,vector<double> xs,int n = 10) {
-  int s = xs.size();
-  vector<double> rxs,rys;
-  rxs.push_back(xs[0]);
-  rys.push_back(polyeval(coeffs,xs[0]));
-  for(int i=0;i<s-1;i++) {
-    double dx = (xs[i+1]-xs[i])/n;
-    for(int j=0;j<n;j++) {
-      double x = xs[i]+dx*(j+1);
-      rxs.push_back(x);
-      rys.push_back(polyeval(coeffs,x));
-    }
-  }
-  return make_tuple(rxs,rys);
-}
-
 double polyDerivativeEval(Eigen::VectorXd coeffs, double x) {
   auto& c(coeffs);
   double result = 0;
@@ -220,103 +204,6 @@ void printSolution(solret& sol,Eigen::VectorXd& C,double px,double py,double psi
     if(!(cxs[i]>cxs[i-1])) cout<<" order inconsistent "<<endl;
 }
 
-
-
-struct simulator {
-  vector<double> ptsx,ptsy;
-  int ws/*waypoint_start*/;
-  int nws/*number of waypoints sent back*/;
-  double t,x0,y0,psi0,v0,delta0,a0;
-  simulator(string path) {
-    ws = 0;
-    nws = 6;
-    ifstream fin(path);
-    double x,y;
-    while(fin) {
-      fin>>x>>y;
-      ptsx.push_back(x);
-      ptsy.push_back(y);
-    }
-  }
-  void start(double& x,double& y,double& psi,double& v,vector<double>& xs,vector<double>& ys) {
-    vector<double> ptsx0,ptsy0;
-    ws = 0;
-    for(int i=0;i<nws;i++) {
-      int l = ws+i;
-      ptsx0.push_back(ptsx[l]);
-      ptsy0.push_back(ptsy[l]);
-    }
-    x = ptsx[0];
-    y = ptsy[0];
-    double dx(ptsx[1]-x),dy(ptsy[1]-y);
-    psi = atan2(dy,dx);
-    v = 0.0;
-    x0=x;
-    y0=y;
-    psi0=psi;
-    v0=v;
-    delta0=0;
-    a0=0;
-    std::tie(xs,ys) = toCarCoords(x0,y0,psi0,ptsx0,ptsy0);
-  }
-  bool nextstate(double dt/* time from last control input */,
-		 double delta1,double a1, /* new control inputs */
-		 double& x1,double& y1,double& psi1,double& v1, /* position of the vehicle control inputs were recieved */
-		 vector<double>& cptsx1,vector<double>& cptsy1) {
-    v1 = v0 + a0*dt;
-    double dist = v0*dt+0.5*a0*dt*dt;
-    psi1 = psi0 - (delta0/Lf)*dist;
-    if(fabs(delta0)>tol) {
-      double r  =  Lf/delta0;
-      x1 = x0 - r*(sin(psi1)-sin(psi0));
-      y1 = y0 - r*(cos(psi0)-cos(psi1));
-    } else {
-      double psi_avg = 0.5*(psi0+psi1);
-      x1 = x0 + dist*cos(psi_avg);
-      y1 = y0 + dist*sin(psi_avg);
-    }
-    {
-      double ct(cos(psi1)),st(sin(psi1));
-      for(int i = 0;i<nws;i++) {
-	int l = i+ws;
-	if(l==ptsx.size())
-	  break;
-	double dx(ptsx[l]-x1),dy(ptsy[l]-y1);
-	if(dx*ct+dy*st > 0) {
-	  ws = l;
-	  cout<<"waypoint_start : "<<ws;
-	  break;
-	}
-      }
-      vector<double> ptsx1,ptsy1;
-      ptsx1.clear();
-      ptsy1.clear();
-      for(int i=0;i<nws;i++) {
-	int l = i+ws;
-	if(l==ptsx.size())
-	  break;
-	ptsx1.push_back(ptsx[l]);
-	ptsy1.push_back(ptsy[l]);
-      }
-      if(ptsx1.size()<4)
-	return false;
-      cptsx1.clear();
-      cptsy1.clear();
-      std::tie(cptsx1,cptsy1) = toCarCoords(x1,y1,psi1,ptsx1,ptsy1);
-    }
-    {
-      x0=x1;
-      y0=y1;
-      psi0=psi1;
-      v0=v1;
-      delta0=delta1;
-      a0=a1;
-      t+=dt;
-    }
-    return true;
-  }
-};
-
 double samedir(double x0,double y0,double x1,double y1,double psi) {
   double dx(x1-x0),dy(y1-y0);
   double r = sqrt(dx*dx+dy*dy);
@@ -354,83 +241,18 @@ string path(string s) {
   return cat({"/home/sunil/carnd/CarND-MPC-Project/",s});
 }
 
-void testrun(string p,double dx=0,double dy=0,double dpsi=0) {
-  ofstream fout(cat({"/home/sunil/carnd/CarND-MPC-Project/debug/",p,"_debug"}));
-  simulator s(path(p));
-  double x,y,psi,v,delta,a,dt = 0.05;
-  vector<double> cptsx,cptsy,xs_pred,ys_pred;
-  s.start(x,y,psi,v,cptsx,cptsy);
-  assert(cptsx.size()==6);
-  fout<<"x,y,psi,v,delta,a,x1,x2,x3,x4,x5,x6,y1,y2,y3,y4,y5,y6"<<endl;
-  x+=dx;
-  y+=dy;
-  psi+=dpsi;
-  while(true) {
-    fout<<x<<","<<y<<","<<psi<<","<<v<<","<<delta<<","<<a;
-    for(auto cptx:cptsx) fout<<","<<cptx; for(auto cpty:cptsy) fout<<","<<cpty; fout<<endl;
-    fout.flush();
-    calculateActivation(x,y,psi,v,delta,a,cptsx,cptsy,//input
-			delta,a,xs_pred,ys_pred,dt);// output
-    if(!s.nextstate(dt,delta,a, // input
-		    x,y,psi,v,cptsx,cptsy)) { // output 
-      break;
-    }
-  }
+double seconds(std::chrono::system_clock::time_point start,std::chrono::system_clock::time_point end) {
+  return std::chrono::duration<double>(end-start).count();
 }
-
-
-void test(string sol,string way) {
- 
-  std::vector<string> names;
-  std::map<string,vector<double> > v;
-  string s;
-  //xs ax fxs cxs ys ay cys psis apsi vs av ctes actes epsis aepsis deltas as
-  {
-    ifstream fin(sol);
-    for(int i=0;i<17;i++) {
-      fin>>s;
-      names.push_back(s);
-    }
-    while(fin) {
-      for(string s:names) {
-	double x;
-	fin>>x;
-	if(!fin) break;
-	v[s].push_back(x);
-      }
-    }
-  }
-  vector<double> ptsx,ptsy;
-  {
-    ifstream fin(way);
-    string s;
-    fin>>s>>s;
-    for(int i=0;i<6;i++) {
-      double x,y;
-      fin>>x>>y;
-      ptsx.push_back(x);
-      ptsy.push_back(y);	
-    }
-  }
-  double x,y,psi,vel,delta,a;
-  vector<double> xs_pred,ys_pred;
-  double deltax = 10.0,deltay=10.0;
-  vector<double> dxs({-deltax,0,deltax}),dys({-deltay,0,deltay});
-  for(double dx:dxs)
-    for(double dy:dys)
-      calculateActivation(v["xs"][0]+dx,v["ys"][0]+dy,v["psis"][0],v["vs"][0],v["deltas"][0],v["as"][0],ptsx,ptsy,
-			  delta,a,xs_pred,ys_pred,0.1);
-}
-
 
 int main() {
-  //testrun("lake_track_waypoints.txt");
-  //testrun("test3.txt",0,10,1.0);
-  //test("../testcases/solution_382","../testcases/way_382"); 
-  //return 0;
   uWS::Hub h;
   static int id = 0;
-  h.onMessage([](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  ofstream fout(path("debug/history.txt"));
+  fout<<"type,time,lag,x,y,psi,v,delta,a,x0,x1,x2,x3,x4,x5,y0,y1,y2,y3,y4,y5"<<endl;
+  auto time = std::chrono::system_clock::now();
+  auto start = time;
+  h.onMessage([&fout,&time,&start](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     string sdata = string(data).substr(0, length);
     if (sdata.size() > 2 && sdata[0] == '4' && sdata[1] == '2') {
@@ -439,31 +261,31 @@ int main() {
         auto j = json::parse(s);
         string event = j[0].get<string>();
         if (event == "telemetry") {
-	  auto start = std::chrono::system_clock::now();
+	  auto now = std::chrono::system_clock::now();
+	  double sim_round_trip = seconds(time,now);
+	  time = now;
           vector<double> ptsx=j[1]["ptsx"],ptsy=j[1]["ptsy"];
 	  double px(j[1]["x"]),py(j[1]["y"]),psi(j[1]["psi"]),
 	    v(j[1]["speed"]),psi_unity(j[1]["psi_unity"]),
 	    delta(j[1]["steering_angle"]),throttle(j[1]["throttle"]);
-
+	  fout<<"recv,"<<seconds(start,now)<<","<<sim_round_trip<<","<<px<<","<<py<<","<<psi<<","<<v<<","<<delta<<","<<throttle;
+	  for(auto x:ptsx) fout<<","<<x; for(auto y:ptsy) fout<<","<<y; fout<<endl; fout.flush();
 	  static double delay_estimate = 0.1; // delay of 100 MilliSeconds
           static double steer_value = 0.0;
           static double throttle_value = 0.0;
-	  id++;
-	  cout<<"-------------------------------------------------start "<<id<<" ----------------------------------------------"<<endl;
-	  cout<<"throttle sent : "<<throttle_value<<" recieved : "<<throttle<<" steer sent : "<<steer_value<<" recieved : "<<delta<<endl;
-	  cout<<"delay : "<<delay_estimate<<" before px : "<<px<<" py : "<<py<<" psi : "<<psi<<" v : "<<v<<endl;
 	  globalKinematic(px,py,psi,v,steer_value,throttle,delay_estimate,px,py,psi,v);
-	  cout<<" after px : "<<px<<" py : "<<py<<" psi : "<<psi<<" v : "<<v<<endl;
 	  vector<double> mpc_x_vals,mpc_y_vals,next_x_vals,next_y_vals;
 	  std::tie(next_x_vals,next_y_vals) = toCarCoords(px,py,psi,ptsx,ptsy);
 	  calculateActivation(px,py,psi,v,steer_value,throttle_value,next_x_vals,next_y_vals,
 			      steer_value,throttle_value,mpc_x_vals,mpc_y_vals,delay_estimate);
-	  
 	  this_thread::sleep_for(chrono::milliseconds(100)); // simulate latency
-	  auto end = std::chrono::system_clock::now();
-	  std::chrono::duration<double> elapsed_seconds = end-start;
-	  delay_estimate = elapsed_seconds.count();
-	  cout<<"#################################################end "<<id<<"###############################################"<<endl;
+	  now = std::chrono::system_clock::now();
+	  delay_estimate = seconds(time,now);
+	  time = now;
+	  fout<<"pred,"<<seconds(start,now)<<","<<delay_estimate<<","<<px<<","<<py<<","<<psi<<","<<v<<","<<steer_value<<","<<throttle_value;
+	  for(auto x:next_x_vals) fout<<","<<x; for(auto y:next_y_vals) fout<<","<<y; fout<<endl; fout.flush();
+
+	  
 	  json msgJson;
 	  // rescale steer_value which is in radians to -1 to 1
           msgJson["steering_angle"] = steer_value/0.436332;
