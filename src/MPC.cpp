@@ -6,7 +6,7 @@
 using CppAD::AD;
 
 size_t N = 30;
-static double dt = 0.05;
+static double dt = 0.25;
 const double Lf = 2.67;
 double ref_v = 10;
 size_t x_start = 0;
@@ -25,20 +25,29 @@ class FG_eval {
   FG_eval(Eigen::VectorXd coeffs) { this->coeffs = coeffs; }
   typedef CPPAD_TESTVECTOR(AD<double>) ADvector;
   void operator()(ADvector& fg, const ADvector& vars) {
-    
+    const double cte_weight = 1;
+    const double epsi_weight = 1;
+    const double v_weight = 1;
+    const double delta_weight = 1;
+    const double a_weight = 1;
+    const double delta_change_weight = 1;
+    const double a_change_weight = 1;
+
     for (int t = 0; t < N; t++) {
-      fg[0] += CppAD::pow(vars[cte_start + t], 2);
-      fg[0] += CppAD::pow(vars[epsi_start + t], 2);
-      fg[0] += CppAD::pow(vars[v_start + t] - ref_v, 2);
+      // absolute cte should always be less than 2
+      fg[0] += cte_weight/(9-CppAD::pow(vars[cte_start + t], 2)); 
+      // epsi should always be less than sin(30 degrees)
+      fg[0] += epsi_weight/(0.25-CppAD::pow(vars[epsi_start + t], 2));
+      fg[0] += v_weight*CppAD::pow(vars[v_start + t] - ref_v, 2);
     }
     for (int t = 0; t < N - 1; t++) {
       // Minimize the use of actuators.
-      fg[0] += CppAD::pow(vars[delta_start + t], 2);
-      fg[0] += CppAD::pow(vars[a_start + t], 2);
+      fg[0] += delta_weight*CppAD::pow(vars[delta_start + t], 2);
+      fg[0] += a_weight*CppAD::pow(vars[a_start + t], 2);
     }
     for (int t = 0; t < N - 2; t++) {  // reduce change in actuation neighbouring timesteps
-      fg[0] += CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2)*0.1;
-      fg[0] += CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
+      fg[0] += delta_change_weight*CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2)*0.1;
+      fg[0] += a_change_weight*CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
     }
 
     fg[1 + x_start] = vars[x_start];
@@ -127,9 +136,19 @@ MPC::Solve(Eigen::VectorXd x0, double deltaT,Eigen::VectorXd coeffs) {
   vars[cte_start] = cte;
   vars[epsi_start] = epsi;
 
-  for (int i = 0; i < delta_start; i++) {
+  for (int i = 0; i < cte_start; i++) {
     vars_lowerbound[i] = -1.0e19;
     vars_upperbound[i] = 1.0e19;
+  }
+
+  for(int i=cte_start;i<epsi_start;i++) {
+    vars_lowerbound[i] = -2+1e-9;
+    vars_upperbound[i] = 2-1e-9;
+  }
+
+  for(int i=epsi_start;i<delta_start;i++) {
+    vars_lowerbound[i] = -0.5+1e-9;
+    vars_upperbound[i] = 0.5-1e-9;
   }
 
   for (int i = delta_start; i < a_start; i++) {

@@ -106,8 +106,8 @@ void globalKinematic(double x0,double y0,double psi0,double v0,double delta0,dou
   psi1 = psi0 - (delta0/Lf)*dist;
   if(fabs(delta0)>tol) {
     double r  =  Lf/delta0;
-    x1 = x0 + r*(sin(psi1)-sin(psi0));
-    y1 = y0 + r*(cos(psi0)-cos(psi1));
+    x1 = x0 - r*(sin(psi1)-sin(psi0));
+    y1 = y0 - r*(cos(psi0)-cos(psi1));
   } else {
     double psi_avg = 0.5*(psi0+psi1);
     x1 = x0 + dist*cos(psi_avg);
@@ -215,7 +215,7 @@ void printSolution(solret& sol,Eigen::VectorXd& C,double px,double py,double psi
   }
   cout<<"##################################### end "<<id<<" ##############################################"<<endl;
   if(!ok)
-    throw("solver failed");
+    cout<<"solver failed";
   for(int i=1;i<N;i++)
     if(!(cxs[i]>cxs[i-1])) cout<<" order inconsistent "<<endl;
 }
