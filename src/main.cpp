@@ -238,7 +238,8 @@ string cat(std::vector<string> x) {
   return ss.str();
 }
 string path(string s) {
-  return cat({"/home/sunil/carnd/CarND-MPC-Project/",s});
+  //return cat({"/home/sunil/carnd/CarND-MPC-Project/",s});
+  return cat({"/usr/local/google/home/sunilsn/carnd/t2/CarND-MPC-Project/",s});
 }
 
 double seconds(std::chrono::system_clock::time_point start,std::chrono::system_clock::time_point end) {
