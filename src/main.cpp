@@ -200,8 +200,15 @@ void printSolution(solret& sol,Eigen::VectorXd& C,double px,double py,double psi
   cout<<"##################################### end "<<id<<" ##############################################"<<endl;
   if(!ok)
     cout<<"solver failed";
-  for(int i=1;i<N;i++)
-    if(!(cxs[i]>cxs[i-1])) cout<<" order inconsistent "<<endl;
+  bool exit = false;
+  for(int i=1;i<N;i++){
+    if(!(cxs[i]>cxs[i-1])) {
+      cout<<" order inconsistent "<<i-1<<" "<<i<<endl;
+      exit = true;
+    }
+  }
+  if(exit)
+    throw("error");
 }
 
 double samedir(double x0,double y0,double x1,double y1,double psi) {

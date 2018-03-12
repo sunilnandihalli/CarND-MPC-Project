@@ -9,6 +9,11 @@ size_t N = 30;
 static double dt = 0.25;
 const double Lf = 2.67;
 double ref_v = 10;
+double max_v = 15;
+double min_v = -0.05;
+double min_a = -1;
+double max_a = 1;
+double ref_a = 0;
 size_t x_start = 0;
 size_t y_start = x_start + N;
 size_t psi_start = y_start + N;
@@ -38,12 +43,15 @@ class FG_eval {
       fg[0] += cte_weight/(9-CppAD::pow(vars[cte_start + t], 2)); 
       // epsi should always be less than sin(30 degrees)
       fg[0] += epsi_weight/(0.25-CppAD::pow(vars[epsi_start + t], 2));
-      fg[0] += v_weight*CppAD::pow(vars[v_start + t] - ref_v, 2);
+      fg[0] += v_weight*(CppAD::pow(vars[v_start + t] - ref_v, 2)
+                         + CppAD::pow(max_v-vars[v_start+t],-1)) ;
     }
     for (int t = 0; t < N - 1; t++) {
       // Minimize the use of actuators.
       fg[0] += delta_weight*CppAD::pow(vars[delta_start + t], 2);
-      fg[0] += a_weight*CppAD::pow(vars[a_start + t], 2);
+      fg[0] += a_weight*(CppAD::pow(vars[a_start + t], 2)
+                         + CppAD::pow(vars[a_start + t]-min_a,-1)
+                         + CppAD::pow(max_a-vars[a_start+t],-1));
     }
     for (int t = 0; t < N - 2; t++) {  // reduce change in actuation neighbouring timesteps
       fg[0] += delta_change_weight*CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2)*0.1;
@@ -117,83 +125,100 @@ MPC::~MPC() {}
 
 tuple<vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,vector<double>,bool>
 MPC::Solve(Eigen::VectorXd x0, double deltaT,Eigen::VectorXd coeffs) {
-  dt = deltaT;
+  int tryid = 0;
   bool ok = true;
-  size_t i;
   typedef CPPAD_TESTVECTOR(double) Dvector;
-  double x(x0[0]),y(x0[1]),psi(x0[2]),v(x0[3]),cte(x0[4]),epsi(x0[5]);
-  size_t n_vars(x0.size()*N + 2*(N-1)),n_constraints(x0.size()*N);
-  
-  Dvector vars(n_vars),vars_lowerbound(n_vars),vars_upperbound(n_vars),constraints_lowerbound(n_constraints),constraints_upperbound(n_constraints);
-  for (int i = 0; i < n_vars; i++) {
-    vars[i] = 0;
-  }
-
-  vars[x_start] = x;
-  vars[y_start] = y;
-  vars[psi_start] = psi;
-  vars[v_start] = v;
-  vars[cte_start] = cte;
-  vars[epsi_start] = epsi;
-
-  for (int i = 0; i < cte_start; i++) {
-    vars_lowerbound[i] = -1.0e19;
-    vars_upperbound[i] = 1.0e19;
-  }
-
-  for(int i=cte_start;i<epsi_start;i++) {
-    vars_lowerbound[i] = -2+1e-9;
-    vars_upperbound[i] = 2-1e-9;
-  }
-
-  for(int i=epsi_start;i<delta_start;i++) {
-    vars_lowerbound[i] = -0.5+1e-9;
-    vars_upperbound[i] = 0.5-1e-9;
-  }
-
-  for (int i = delta_start; i < a_start; i++) {
-    vars_lowerbound[i] = -0.436332;
-    vars_upperbound[i] = 0.436332; // 25 deg in radians
-  }
-  for (int i = a_start; i < n_vars; i++) {
-    vars_lowerbound[i] = -1.0;
-    vars_upperbound[i] = 1.0; // throttle
-  }
-
-  for (int i = 0; i < n_constraints; i++) {
-    constraints_lowerbound[i] = 0;
-    constraints_upperbound[i] = 0;
-  }
-
-  constraints_lowerbound[x_start] = x;
-  constraints_lowerbound[y_start] = y;
-  constraints_lowerbound[psi_start] = psi;
-  constraints_lowerbound[v_start] = v;
-  constraints_lowerbound[cte_start] = cte;
-  constraints_lowerbound[epsi_start] = epsi;
-
-  constraints_upperbound[x_start] = x;
-  constraints_upperbound[y_start] = y;
-  constraints_upperbound[psi_start] = psi;
-  constraints_upperbound[v_start] = v;
-  constraints_upperbound[cte_start] = cte;
-  constraints_upperbound[epsi_start] = epsi;
-  
-  FG_eval fg_eval(coeffs);// object that computes objective and constraints
-
-  std::string options; // options for IPOPT solver
-  options += "Integer print_level  0\n";
-  options += "Sparse  true        forward\n";
-  //options += "Sparse  true        reverse\n";
-  options += "Numeric max_cpu_time          250\n";
   CppAD::ipopt::solve_result<Dvector> solution;
-  CppAD::ipopt::solve<Dvector, FG_eval>(
-      options, vars, vars_lowerbound, vars_upperbound, constraints_lowerbound,
-      constraints_upperbound, fg_eval, solution);
+  do {
+    if(tryid>0)
+      cout<<" retrying ... "<<tryid<<endl;
+    dt = deltaT;
+    size_t i;
+    double x(x0[0]),y(x0[1]),psi(x0[2]),v(x0[3]),cte(x0[4]),epsi(x0[5]);
+    size_t n_vars(x0.size()*N + 2*(N-1)),n_constraints(x0.size()*N);
+    
+    Dvector vars(n_vars),vars_lowerbound(n_vars),vars_upperbound(n_vars),constraints_lowerbound(n_constraints),constraints_upperbound(n_constraints);
+    for (int i = 0; i < n_vars; i++) {
+      vars[i] = 0;
+    }
+    
+    vars[x_start] = x;
+    vars[y_start] = y;
+    vars[psi_start] = psi;
+    vars[v_start] = v;
+    vars[cte_start] = cte;
+    vars[epsi_start] = epsi;
+    
+    for (int i = 0; i < v_start; i++) {
+      vars_lowerbound[i] = -1.0e19;
+      vars_upperbound[i] = 1.0e19;
+    }
 
-  ok &= solution.status == CppAD::ipopt::solve_result<Dvector>::success;
-  auto cost = solution.obj_value;
-  std::cout << "Cost " << cost << std::endl;
+    for(int i=v_start; i<cte_start;i++) {
+      vars_lowerbound[i] = -1.0e19;//min_v + 1e-9;
+      vars_upperbound[i] = max_v - 1e-9;
+    }
+    
+    for(int i=cte_start;i<epsi_start;i++) {
+      vars_lowerbound[i] = -2+1e-9;
+      vars_upperbound[i] = 2-1e-9;
+    }
+    
+    for(int i=epsi_start;i<delta_start;i++) {
+      vars_lowerbound[i] = -0.5+1e-9;
+      vars_upperbound[i] = 0.5-1e-9;
+    }
+    
+    for (int i = delta_start; i < a_start; i++) {
+      vars_lowerbound[i] = -0.436332;
+      vars_upperbound[i] = 0.436332; // 25 deg in radians
+    }
+    for (int i = a_start; i < n_vars; i++) {
+      vars_lowerbound[i] = -1.0+1e-9;
+      vars_upperbound[i] = 1.0-1e-9; // throttle
+    }
+    
+    for (int i = 0; i < n_constraints; i++) {
+      constraints_lowerbound[i] = 0;
+      constraints_upperbound[i] = 0;
+    }
+    
+    constraints_lowerbound[x_start] = x;
+    constraints_lowerbound[y_start] = y;
+    constraints_lowerbound[psi_start] = psi;
+    constraints_lowerbound[v_start] = v;
+    constraints_lowerbound[cte_start] = cte;
+    constraints_lowerbound[epsi_start] = epsi;
+    
+    constraints_upperbound[x_start] = x;
+    constraints_upperbound[y_start] = y;
+    constraints_upperbound[psi_start] = psi;
+    constraints_upperbound[v_start] = v;
+    constraints_upperbound[cte_start] = cte;
+    constraints_upperbound[epsi_start] = epsi;
+    
+    FG_eval fg_eval(coeffs);// object that computes objective and constraints
+    {
+      std::string options; // options for IPOPT solver
+      if(tryid>0) {
+        options += "Integer print_level 5\n";
+      } else {
+        options += "Integer print_level  0\n";
+      }
+      options += "Sparse  true        forward\n";
+      //options += "Sparse  true        reverse\n";
+      options += "Numeric max_cpu_time          250\n";
+      CppAD::ipopt::solve_result<Dvector> solution_tmp;
+      CppAD::ipopt::solve<Dvector, FG_eval>(
+          options, vars, vars_lowerbound, vars_upperbound, constraints_lowerbound,
+          constraints_upperbound, fg_eval, solution_tmp);
+      ok = (solution_tmp.status == CppAD::ipopt::solve_result<Dvector>::success);
+      solution = solution_tmp;
+    }
+    tryid++;
+    auto cost = solution.obj_value;
+    std::cout << "Cost " << cost << std::endl;
+  } while(!ok && tryid<2);
   {
     vector<double> x(N),y(N),psi(N),v(N),cte(N),epsi(N),delta(N-1),a(N-1);
     for(int i=0;i<N;i++) {
