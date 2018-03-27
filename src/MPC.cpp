@@ -22,7 +22,7 @@ size_t cte_start = v_start + N;
 size_t epsi_start = cte_start + N;
 size_t delta_start = epsi_start + N;
 size_t a_start = delta_start + N - 1;
-size_t pd_start = a_start + N - 1; // positive direction constraint
+
 
 class FG_eval {
  public:
