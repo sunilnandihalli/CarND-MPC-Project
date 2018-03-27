@@ -1,5 +1,6 @@
 #define HAVE_CSTDDEF
 #include <math.h>
+
 #include <uWS/uWS.h>
 #include <chrono>
 #include <iostream>
@@ -230,7 +231,7 @@ void calculateActivation(double x0,double y0,double psi0,double v0,
   std::tie(cte0,epsi0) = cte_and_epsi(0,0,0,coeffs);
   state<<0,0,0,v0,cte0,epsi0;
   auto controls = mpc.Solve(state,deltaT,coeffs);
-  printSolution(controls,coeffs,0,0,0,cptsx0,cptsy0);
+  //printSolution(controls,coeffs,0,0,0,cptsx0,cptsy0);
   delta1 = std::get<6>(controls)[0];
   a1 = std::get<7>(controls)[0];
   xs_pred = std::get<0>(controls);
