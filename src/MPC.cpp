@@ -10,7 +10,7 @@ static double dt = 0.25;
 const double Lf = 2.67;
 double ref_v = 10;
 double max_v = 15;
-double min_v = -0.05;
+double min_v = 0.0;
 double min_a = -1;
 double max_a = 1;
 double ref_a = 0;
@@ -43,18 +43,23 @@ class FG_eval {
       fg[0] += cte_weight/(9-CppAD::pow(vars[cte_start + t], 2)); 
       // epsi should always be less than sin(30 degrees)
       fg[0] += epsi_weight/(0.25-CppAD::pow(vars[epsi_start + t], 2));
+      double k = 2.0;
+      auto smin = -CppAD::log(CppAD::exp(-k*vars[v_start])+CppAD::exp(-k*min_v))/2;
       fg[0] += v_weight*(CppAD::pow(vars[v_start + t] - ref_v, 2)
-                         + CppAD::pow(max_v-vars[v_start+t],-1)) ;
+                         + CppAD::pow(max_v-vars[v_start+t],-1)
+                         //+ CppAD::pow(vars[v_start+t] - min_v,-1)
+                         ) ;
     }
     for (int t = 0; t < N - 1; t++) {
       // Minimize the use of actuators.
       fg[0] += delta_weight*CppAD::pow(vars[delta_start + t], 2);
       fg[0] += a_weight*(CppAD::pow(vars[a_start + t], 2)
-                         + CppAD::pow(vars[a_start + t]-min_a,-1)
-                         + CppAD::pow(max_a-vars[a_start+t],-1));
+                         //+ CppAD::pow(vars[a_start + t]-min_a,-1)
+                         //+ CppAD::pow(max_a-vars[a_start+t],-1)
+                         );
     }
     for (int t = 0; t < N - 2; t++) {  // reduce change in actuation neighbouring timesteps
-      fg[0] += delta_change_weight*CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2)*0.1;
+      fg[0] += delta_change_weight*CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
       fg[0] += a_change_weight*CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
     }
 
@@ -155,13 +160,13 @@ MPC::Solve(Eigen::VectorXd x0, double deltaT,Eigen::VectorXd coeffs) {
     }
 
     for(int i=v_start; i<cte_start;i++) {
-      vars_lowerbound[i] = -1.0e19;//min_v + 1e-9;
+      vars_lowerbound[i] = -1e-9;
       vars_upperbound[i] = max_v - 1e-9;
     }
     
     for(int i=cte_start;i<epsi_start;i++) {
-      vars_lowerbound[i] = -2+1e-9;
-      vars_upperbound[i] = 2-1e-9;
+      vars_lowerbound[i] = -3+1e-9;
+      vars_upperbound[i] = 3-1e-9;
     }
     
     for(int i=epsi_start;i<delta_start;i++) {
@@ -174,8 +179,8 @@ MPC::Solve(Eigen::VectorXd x0, double deltaT,Eigen::VectorXd coeffs) {
       vars_upperbound[i] = 0.436332; // 25 deg in radians
     }
     for (int i = a_start; i < n_vars; i++) {
-      vars_lowerbound[i] = -1.0+1e-9;
-      vars_upperbound[i] = 1.0-1e-9; // throttle
+      vars_lowerbound[i] = -1.0;
+      vars_upperbound[i] = 1.0; // throttle
     }
     
     for (int i = 0; i < n_constraints; i++) {
