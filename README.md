@@ -11,8 +11,15 @@
  
 **The choice of Timestep Length and Elapsed duration**
 
+ * Smaller timestep is usually better as the errors due to the linearization assumption will be small. 
+ * we can't make the timestep too small as this would mean a Large N to be able to adequately see any curvature coming ahead. Large N means that we will have to do a lot of computation.
+So we strike a compromise.  
+
   The latency played a major role in the choice of time-step. Since there would be no control-input to the simulator during the latency period, I decided to use a time step equal to that of the latency. Since as you can see in the above equations, I properly integrated the terms without making any linearization assumptions. Because of this, reducing the length of the time-step would give me no added advantage. The elapsed duration was simply 100 times the timestep-length. The choice of the number of steps should be large enough to adequately see any curvature in the guide-points returned by the simulator. 
   Since we are able change the throttle or steering angle everytime we get to make the decision, I estimated the amount of elapsed time from my previous control input to the current control-input and used that as the time-step. Because of this, the timestep used during every control-input is different. 
+
+**The guide points are transformed to the car coordinate system**
+While not absolutely necessary, due to the way the problem was setup in class, we need to transform the guide-points to the car-coordinate system. This can make some calculations simpler.
 
 **Handling the latency of the control input**
 
