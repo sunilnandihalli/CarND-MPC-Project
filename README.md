@@ -1,5 +1,20 @@
+* Model equations
 ![equations](./equations.gif) 
 
+* Objective-function and the constraints on various variables to be optimized.
+ cte was bound between +/- 2. The objective function would approach infinity as cte goes near +/-2
+ epsi was bound between +/- 0.5. This is equivalent to 60 degrees. The objective function would approach infinity near the boundaries.
+ v was bounded by a maximum velocity. It objective would approach infinity when near maximum velocity. It also has a reference velocity. The objective function would grow as its value move away from the reference velocity.
+ 
+ 
+* The choice of Timestep Length and Elapsed duration.
+  The latency played a major role in the choice of time-step. Since there would be no control-input to the simulator during the latency period, I decided to use a time step equal to that of the latency. Since as you can see in the above equations, I properly integrated the terms without making any linearization assumptions. Because of this, reducing the length of the time-step would give me no added advantage. The elapsed duration was simply 100 times the timestep-length. The choice of the number of steps should be large enough to adequately see any curvature in the guide-points returned by the simulator. 
+  Since we are able change the throttle or steering angle everytime we get to make the decision, I estimated the amount of elapsed time from my previous control input to the current control-input and used that as the time-step. Because of this, the timestep used during every control-input is different. 
+
+
+* Handling the latency of the control input:
+
+ The latency of the control input was handled by using the latency from the last response time and then use the previously known state and control-inputs of the system to estimate where the vehicle would be after the latent period and calculate the control-input for that instant.
 
 # CarND-Controls-MPC
 Self-Driving Car Engineer Nanodegree Program
